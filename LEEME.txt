@@ -1,0 +1,22 @@
+MAPA WEB — CB LOS SANTOS
+
+Contenido:
+- index.html: mapa web georreferenciado.
+
+Para que el GPS funcione en el teléfono, el archivo debe publicarse en una dirección HTTPS (no abrirse directamente desde Descargas).
+
+Publicación gratuita sugerida con GitHub Pages:
+1. Inicia sesión o crea una cuenta en GitHub.
+2. Crea un repositorio nuevo, por ejemplo: mapa-cb-los-santos.
+3. Sube el archivo index.html a la raíz del repositorio.
+4. En el repositorio, abre Settings > Pages.
+5. En Build and deployment, elige Deploy from a branch.
+6. Selecciona la rama main y la carpeta /(root), y guarda.
+7. Espera a que GitHub Pages publique el sitio. La dirección será similar a:
+   https://TU-USUARIO.github.io/mapa-cb-los-santos/
+8. Abre esa dirección en Chrome Android y permite el acceso a la ubicación.
+
+Notas:
+- Requiere Internet para cargar Leaflet y el mapa base de OpenStreetMap.
+- La imagen suministrada está georreferenciada de forma aproximada usando la cuadrícula impresa.
+- La imagen no sustituye una capa oficial de polígonos de zonas protegidas.
