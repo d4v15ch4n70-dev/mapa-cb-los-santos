@@ -46,6 +46,12 @@
   .popup-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
   .popup-actions button { border:0; border-radius:7px; padding:8px 9px; background:#1769aa; color:#fff; font-size:12px; }
   .popup-actions button.secondary { background:#e9eef2; color:#17212b; }
+  .coord-search { margin:12px 0; padding:10px; border:1px solid #d6e0e7; border-radius:10px; background:rgba(255,255,255,.8); }
+  .coord-search label { display:block; font-size:12px; font-weight:700; margin:5px 0 3px; }
+  .coord-search input { box-sizing:border-box; width:100%; padding:9px; border:1px solid #bac7d1; border-radius:7px; font-size:14px; }
+  .coord-search .coord-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .coord-search button { width:100%; margin-top:8px; border:0; border-radius:7px; padding:10px; background:#1769aa; color:#fff; font-weight:700; }
+  .coord-search .hint { font-size:11px; color:#52616b; margin:6px 0 0; }
   @media (max-width:899px) {
     .leaflet-control-layers { max-width:190px; }
     .leaflet-control-layers-expanded { padding:7px 9px; }
@@ -92,6 +98,18 @@
     <p>Consulta visual. Activa el GPS y toca un punto para consultar sus coordenadas.</p>
     <button class="primary" onclick="locateMe()">Mi ubicación GPS</button>
     <button class="secondary" onclick="map.fitBounds(imageBounds)">Ver área completa</button>
+    <div class="coord-search">
+      <strong>Buscar por coordenadas</strong>
+      <div class="coord-row" style="grid-template-columns:1fr 1fr;">
+        <div><label for="coordSystem">Sistema de coordenadas</label><select id="coordSystem" onchange="updateCoordinateLabels()" style="width:100%;padding:9px;border:1px solid #b8c5d1;border-radius:8px;background:white;"><option value="wgs84">WGS84 (latitud/longitud)</option><option value="crtm05">CRTM-05 (Este/Norte)</option></select></div>
+      </div>
+      <div class="coord-row">
+        <div><label id="coordLabel1" for="searchLat">Latitud</label><input id="searchLat" type="number" step="any" inputmode="decimal" placeholder="9.550000"></div>
+        <div><label id="coordLabel2" for="searchLon">Longitud</label><input id="searchLon" type="number" step="any" inputmode="decimal" placeholder="-84.050000"></div>
+      </div>
+      <button type="button" onclick="searchCoordinates()">Ir a coordenadas</button>
+      <p class="hint" id="coordHint">WGS84: introduce latitud y longitud en grados decimales, por ejemplo 9.550000 y -84.050000.</p>
+    </div>
     <div class="small" id="cadastreStatus">Activa Catastro Zona 1 o Zona 2 y toca una parcela para consultar sus atributos, si el servicio oficial los proporciona.</div>
     <p><label for="opacity">Transparencia de la imagen: <strong id="opval">85%</strong></label><br>
     <input id="opacity" type="range" min="10" max="100" value="85" style="width:100%" oninput="setOpacity(this.value)"></p>
@@ -156,6 +174,63 @@ function toggleSection(section) {
   controlsButton.textContent = showControls ? '✕ Cerrar controles' : '⚙ Controles';
   legendButton.textContent = showLegend ? '✕ Cerrar leyenda' : '🎨 Leyenda';
 }
+function updateCoordinateLabels() {
+  const crtm = document.getElementById('coordSystem').value === 'crtm05';
+  document.getElementById('coordLabel1').textContent = crtm ? 'Este (m)' : 'Latitud';
+  document.getElementById('coordLabel2').textContent = crtm ? 'Norte (m)' : 'Longitud';
+  document.getElementById('searchLat').placeholder = crtm ? '500000' : '9.550000';
+  document.getElementById('searchLon').placeholder = crtm ? '1050000' : '-84.050000';
+  document.getElementById('coordHint').textContent = crtm
+    ? 'CRTM-05: introduce Este y Norte en metros, por ejemplo 500000 y 1050000.'
+    : 'WGS84: introduce latitud y longitud en grados decimales, por ejemplo 9.550000 y -84.050000.';
+}
+function searchCoordinates() {
+  const firstInput = document.getElementById('searchLat');
+  const secondInput = document.getElementById('searchLon');
+  const status = document.getElementById('status');
+  const first = Number(String(firstInput.value).replace(',', '.'));
+  const second = Number(String(secondInput.value).replace(',', '.'));
+  const crtm = document.getElementById('coordSystem').value === 'crtm05';
+  if (firstInput.value.trim() === '' || secondInput.value.trim() === '' || !Number.isFinite(first) || !Number.isFinite(second)) {
+    status.textContent = 'Introduce dos coordenadas numéricas válidas.';
+    return;
+  }
+  let lat, lon;
+  if (crtm) {
+    if (first < 100000 || first > 900000 || second < 0 || second > 1300000) {
+      status.textContent = 'CRTM-05 no válido. Revisa los valores de Este y Norte en metros.';
+      return;
+    }
+    const ll = proj4('EPSG:5367', 'EPSG:4326', [first, second]);
+    lon = ll[0]; lat = ll[1];
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      status.textContent = 'No se pudieron convertir las coordenadas CRTM-05.';
+      return;
+    }
+  } else {
+    lat = first; lon = second;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      status.textContent = 'WGS84 no válido. Latitud: de -90 a 90; longitud: de -180 a 180.';
+      return;
+    }
+  }
+  const point = L.latLng(lat, lon);
+  const xy = proj4('EPSG:4326', 'EPSG:5367', [lon, lat]);
+  if (window.searchCoordinateMarker) map.removeLayer(window.searchCoordinateMarker);
+  window.searchCoordinateMarker = L.marker(point).addTo(map);
+  const popupHtml = '<div class="popup-coords"><b>Coordenadas encontradas</b>' +
+    '<br>Latitud WGS84: ' + lat.toFixed(6) +
+    '<br>Longitud WGS84: ' + lon.toFixed(6) +
+    '<br>CRTM-05 Este: ' + xy[0].toFixed(2) + ' m' +
+    '<br>CRTM-05 Norte: ' + xy[1].toFixed(2) + ' m' +
+    '<div class="popup-actions"><button onclick="copyPoint(' + lat + ',' + lon + ',' + xy[0] + ',' + xy[1] + ')">Copiar coordenadas</button>' +
+    '<button class="secondary" onclick="openPointInGoogleMaps(' + lat + ',' + lon + ')">Google Maps</button>' +
+    '<button class="secondary" onclick="showLocationQR(' + lat + ',' + lon + ')">Generar QR</button>' +
+    '<button class="secondary" onclick="copyLocationLink(' + lat + ',' + lon + ')">Copiar enlace</button></div></div>';
+  window.searchCoordinateMarker.bindPopup(popupHtml).openPopup();
+  map.setView(point, 17);
+  status.textContent = 'Coordenadas localizadas en el mapa.';
+}
 function locateMe() {
   const status = document.getElementById('status');
   if (!navigator.geolocation) { status.textContent='Este navegador no permite geolocalización.'; return; }
@@ -219,6 +294,8 @@ map.on('click', async e => {
     '<div class="popup-actions">' +
     '<button onclick="copyPoint('+lat+','+lon+','+xy[0]+','+xy[1]+')">Copiar coordenadas</button>' +
     '<button class="secondary" onclick="openPointInGoogleMaps('+lat+','+lon+')">Abrir en Google Maps</button>' +
+    '<button class="secondary" onclick="showLocationQR('+lat+','+lon+')">Generar QR</button>' +
+    '<button class="secondary" onclick="copyLocationLink('+lat+','+lon+')">Copiar enlace</button>' +
     '</div></div>';
   L.popup({maxWidth:280, autoPanPadding:[18,90]}).setLatLng(e.latlng).setContent(popupHtml).openOn(map);
 });
@@ -239,6 +316,34 @@ async function copyPoint(lat, lon, east, north) {
     window.prompt('Copia las coordenadas:', text);
   }
 }
+
+function locationGoogleMapsUrl(lat, lon) {
+  return 'https://www.google.com/maps?q=' + encodeURIComponent(Number(lat).toFixed(6) + ',' + Number(lon).toFixed(6));
+}
+function showLocationQR(lat, lon) {
+  const link = locationGoogleMapsUrl(lat, lon);
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=' + encodeURIComponent(link);
+  const html = '<div class="popup-coords" style="text-align:center;min-width:220px"><b>QR de ubicación</b>' +
+    '<br>Escanea para abrir este punto en Google Maps' +
+    '<div style="margin:10px auto"><img alt="Código QR de ubicación" width="190" height="190" style="display:block;margin:auto;max-width:100%" src="' + qrUrl + '"></div>' +
+    '<div style="font-size:11px;overflow-wrap:anywhere;margin:6px 0">' + link + '</div>' +
+    '<div class="popup-actions" style="justify-content:center"><button onclick="copyLocationLink(' + Number(lat) + ',' + Number(lon) + ')">Copiar enlace</button>' +
+    '<button class="secondary" onclick="openPointInGoogleMaps(' + Number(lat) + ',' + Number(lon) + ')">Abrir mapa</button></div></div>';
+  L.popup({maxWidth:280, autoPanPadding:[18,90]}).setLatLng([lat,lon]).setContent(html).openOn(map);
+}
+async function copyLocationLink(lat, lon) {
+  const link = locationGoogleMapsUrl(lat, lon);
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(link);
+    else {
+      const ta = document.createElement('textarea'); ta.value = link; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); const ok=document.execCommand('copy'); ta.remove();
+      if (!ok) throw new Error('copy failed');
+    }
+    showToast('Enlace de ubicación copiado');
+  } catch (err) { window.prompt('Copia el enlace de ubicación:', link); }
+}
+
 function openPointInGoogleMaps(lat, lon) {
   window.open('https://www.google.com/maps?q='+encodeURIComponent(lat+','+lon), '_blank', 'noopener');
 }
