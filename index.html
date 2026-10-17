@@ -32,7 +32,6 @@
   .search-box input { width:100%; padding:9px; border:1px solid #b8c4cf; border-radius:7px; font-size:14px; }
   .search-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
   .search-actions button { margin:0; }
-  #cadastreStatus { margin-top:6px; }
   .legend-grid { display:grid; grid-template-columns:1fr; gap:7px; }
   .legend-item { display:flex; align-items:center; gap:9px; font-size:12px; line-height:1.3; }
   .swatch { width:18px; height:15px; flex:0 0 18px; border:1px solid rgba(0,0,0,.18); border-radius:4px; }
@@ -110,7 +109,6 @@
       <button type="button" onclick="searchCoordinates()">Ir a coordenadas</button>
       <p class="hint" id="coordHint">WGS84: introduce latitud y longitud en grados decimales, por ejemplo 9.550000 y -84.050000.</p>
     </div>
-    <div class="small" id="cadastreStatus">Activa Catastro Zona 1 o Zona 2 y toca una parcela para consultar sus atributos, si el servicio oficial los proporciona.</div>
     <p><label for="opacity">Transparencia de la imagen: <strong id="opval">85%</strong></label><br>
     <input id="opacity" type="range" min="10" max="100" value="85" style="width:100%" oninput="setOpacity(this.value)"></p>
     <div id="status" class="small">GPS sin activar. Si falla, verifica el permiso de ubicación de Chrome.</div>
@@ -247,45 +245,10 @@ function locateMe() {
     status.innerHTML='No se pudo obtener GPS. Si abriste este HTML desde Descargas (content://), el navegador puede bloquear la ubicación. Abre el mapa desde una dirección HTTPS segura y permite la ubicación para ese sitio. También puedes tocar el mapa para consultar coordenadas.';
   }, {enableHighAccuracy:true, timeout:15000, maximumAge:10000});
 }
-map.on('click', async e => {
+map.on('click', e => {
   const lat = e.latlng.lat;
   const lon = e.latlng.lng;
   const xy = proj4('EPSG:4326','EPSG:5367',[lon,lat]);
-  const active = [];
-  if (map.hasLayer(zona1)) active.push({layer: zona1, name:'Catastro Zona 1', layerName:'SIRI:catastro'});
-  if (map.hasLayer(zona2)) active.push({layer: zona2, name:'Catastro Zona 2', layerName:'SIRI:catastro_aldia'});
-  if (active.length) {
-    const popup = L.popup({maxWidth:300, autoPanPadding:[18,90]}).setLatLng(e.latlng).setContent('<div class="popup-coords"><b>Consultando parcela…</b><br>Buscando atributos en la capa catastral activa.</div>').openOn(map);
-    const point = map.latLngToContainerPoint(e.latlng, map.getZoom());
-    const size = map.getSize();
-    const bounds = map.getBounds();
-    const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()].join(',');
-    const results = [];
-    for (const item of active) {
-      const params = new URLSearchParams({
-        SERVICE:'WMS', VERSION:'1.1.1', REQUEST:'GetFeatureInfo',
-        SRS:'EPSG:4326', BBOX:bbox, WIDTH:String(size.x), HEIGHT:String(size.y),
-        LAYERS:item.layerName, QUERY_LAYERS:item.layerName, STYLES:'',
-        FORMAT:'image/png', INFO_FORMAT:'text/html', FEATURE_COUNT:'5',
-        X:String(Math.round(point.x)), Y:String(Math.round(point.y))
-      });
-      try {
-        const response = await fetch(snitWms + '?' + params.toString(), {method:'GET'});
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const body = await response.text();
-        const cleaned = body.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').trim();
-        if (cleaned && !/no features|no results|no queryable layers|exception/i.test(cleaned.replace(/<[^>]*>/g,' '))) {
-          results.push('<h4 style="margin:6px 0">'+item.name+'</h4>'+cleaned);
-        }
-      } catch (err) {
-        results.push('<b>'+item.name+'</b><br>No fue posible consultar los atributos directamente desde la página. El servicio puede bloquear consultas externas o no estar disponible.');
-      }
-    }
-    const coordHtml = '<hr><b>Coordenadas del punto</b><br>Latitud: '+lat.toFixed(6)+'<br>Longitud: '+lon.toFixed(6)+'<br>CRTM-05 Este: '+xy[0].toFixed(2)+' m<br>CRTM-05 Norte: '+xy[1].toFixed(2)+' m';
-    const resultHtml = results.length ? results.join('<hr>') : '<b>No se encontraron atributos en este punto.</b><br>Acerca el mapa y toca dentro del polígono de la parcela. Verifica que la capa catastral esté activada.';
-    if (popup.isOpen()) popup.setContent('<div class="popup-coords"><b>Consulta catastral</b><br>'+resultHtml+coordHtml+'<div class="popup-actions"><button onclick="copyPoint('+lat+','+lon+','+xy[0]+','+xy[1]+')">Copiar coordenadas</button><button class="secondary" onclick="openPointInGoogleMaps('+lat+','+lon+')">Google Maps</button></div></div>');
-    return;
-  }
   const popupHtml = '<div class="popup-coords"><b>Punto consultado</b>' +
     '<br>Latitud: <span>'+lat.toFixed(6)+'</span>' +
     '<br>Longitud: <span>'+lon.toFixed(6)+'</span>' +
